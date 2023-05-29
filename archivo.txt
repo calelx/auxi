@@ -1,0 +1,420 @@
+
+----EDOCTA---
+
+/*
+Nombre:       CARGOSVARIOSEDOCTA
+Autor:        Luis Merida
+Fecha:        24/03/2014
+Package:      EdoCta
+Descripcion:  Insert en la tabla ccedoctatb
+Modificacion: 11/11/2014 XVELASQUEZ&CIA SE AGREGO PERIODO debido que ya no se
+              acepta null.
+Modificacion: 30/05/2017 XVELASQUEZ - EGALINO, 2872 Se inserta en ccedocta 
+              la carrera_ sede del alumno.
+Modificacion: 21/08/2019 - MSANTOS - SOL.1900001238 - Se agrega parametro
+              ptipoedocta para realizar inserts en diferentes estadosCORRELATIVOEDOCTA de cuenta
+              segun sea:
+              PTIPOEDOCTA = 1, Cuenta Corriente (ccedoctatb)
+              PTIPOEDOCTA = 2, Credito Educativo (ccedoctabecatb)
+              PTIPOEDOCTA = 3, Cuenta Varios (ccedoctavariostb)
+Modificacion: 29/05/2023-Andres Calel-ACALEL se agrego PPERIODO para 
+poder seleccionar el periodo correspondiente
+*/
+PROCEDURE CARGOSVARIOSEDOCTA
+    (
+    PPENSUM            IN DBAFISICC.CAPENSATB.PENSUM%TYPE default null,
+    PCARRERA           IN DBAFISICC.CACARRERASTB.CARRERA%TYPE,
+    PCARNET            IN DBAFISICC.CACARNETBITB.CARNET%TYPE,
+    PCORRELATIVO       IN DBAFISICC.CCEDOCTATB.CORRELATIVO%TYPE,
+    PNUMCTA            IN DBAFISICC.CCEDOCTATB.NUMCTA%TYPE,
+    PCODMOVTO          IN DBAFISICC.CCEDOCTATB.CODMOVTO%TYPE,
+    PMONTO             IN DBAFISICC.CCEDOCTATB.MONTO%TYPE,
+    PCURSO             IN DBAFISICC.CACURSOSTB.CURSO%TYPE,
+    POBSERVACIONES     IN DBAFISICC.CCEDOCTATB.OBSERVACIONES%TYPE,
+    POPERACION         IN DBAFISICC.CCEDOCTATB.OPERACION%TYPE,
+    PSQLCODE           OUT NUMBER,
+    PCENTRO            IN dbafisicc.ccedoctatb.centro%type default null,
+    PTIPOEDOCTA        IN NUMBER DEFAULT 1,
+    PPERIODO           IN DBAFISICC.CCEDOCTATB.PERIODO%TYPE default null
+    ) 
+AS
+   CPeriodoVigente sys_refcursor;
+   vPeriodo dbafisicc.ccedoctatb.periodo%type;
+   vCarrera_sede dbafisicc.caalumcarrstb.carrera_sede%type; 
+   vTipoBeca dbafisicc.caalumbecastb.tipobeca%type;
+   vSBTipo   dbafisicc.caalumbecastb.sbtipo%type;
+  BEGIN
+       IF(PPERIODO IS NULL)THEN
+       DBAFISICC.PKG_ALUMNO.PERIODO(PCARRERA,PCARNET,2,CPeriodoVigente);
+            FETCH CPeriodoVigente INTO vPeriodo; 
+            if  vPeriodo is null then
+                select periodo into vPeriodo
+                  from dbafisicc.cacarrerastb
+                  where carrera=PCARRERA;
+            end if;
+       
+            select carrera_sede into vCarrera_sede
+                  from dbafisicc.caalumcarrstb
+                  where carrera=PCARRERA
+                  and carnet= PCARNET;
+          ELSE
+          vPeriodo:=PPERIODO;
+          END IF;
+    IF PTIPOEDOCTA = 1 THEN                  
+        INSERT INTO DBAFISICC.ccedoctatb
+          (
+          pensum, carrera, carnet, correlativo, numcta, codmovto, 
+          fecha, monto, cargo_abono, curso, observaciones, operacion,periodo,
+          centro
+          )
+        values(PPENSUM, PCARRERA, PCARNET, PCORRELATIVO,vPeriodo, PCODMOVTO, 
+               to_date(to_char(sysdate,'dd/MM/yyyy'),'dd/MM/yyyy'),
+               PMONTO, 'C', PCURSO, POBSERVACIONES, POPERACION,vPeriodo,
+              nvl(vCarrera_sede,PCARRERA));
+    PSQLCODE := SQLCODE;
+    ELSIF PTIPOEDOCTA = 2 THEN
+        SELECT TIPOBECA,SBTIPO
+            INTO vTipoBeca, vSBTipo
+        FROM DBAFISICC.CAALUMBECASTB
+            WHERE CARNET = PCARNET
+              AND CARRERA = PCARRERA
+              AND PERIODO = vPeriodo;
+    
+        INSERT INTO DBAFISICC.ccedoctabecatb
+         (
+         carnet, pensum, carrera, correlativo, codmovto, numcta, fecha,
+         cargo_abono, curso, monto, observaciones, operacion, centro,
+         tipobeca, sbtipo, periodo
+         )
+         values 
+         (
+         PCARNET, PPENSUM, PCARRERA, PCORRELATIVO, PCODMOVTO,
+         vPeriodo, to_date(to_char(sysdate,'dd/MM/yyyy'),'dd/MM/yyyy'), 'C',
+         PCURSO, PMONTO, POBSERVACIONES, POPERACION,nvl(vCarrera_sede,PCARRERA),
+         vTipoBeca, vSBTipo, vPeriodo
+         );
+    PSQLCODE := SQLCODE;
+    ELSIF PTIPOEDOCTA = 3 THEN                
+        INSERT INTO DBAFISICC.ccedoctavariostb
+          (
+          carrera, carnet, correlativo, codmovto, fecha, monto, cargo_abono,
+          curso, observaciones, operacion, centro, fechavencimiento, periodo
+          )
+          values
+          (
+          PCARRERA, PCARNET, PCORRELATIVO, PCODMOVTO, 
+          to_date(to_char(sysdate,'dd/MM/yyyy'),'dd/MM/yyyy'), PMONTO, 'C',
+          PCURSO, POBSERVACIONES, POPERACION, nvl(vCarrera_sede,PCARRERA),
+          null, vPeriodo);
+    PSQLCODE := SQLCODE;
+    END IF;
+  EXCEPTION
+    WHEN OTHERS
+    THEN
+        PSQLCODE := SQLCODE;
+END CARGOSVARIOSEDOCTA;
+
+
+
+PROCEDURE CARGOSVARIOSEDOCTA
+    (
+    PPENSUM            IN DBAFISICC.CAPENSATB.PENSUM%TYPE default null,
+    PCARRERA           IN DBAFISICC.CACARRERASTB.CARRERA%TYPE,
+    PCARNET            IN DBAFISICC.CACARNETBITB.CARNET%TYPE,
+    PCORRELATIVO       IN DBAFISICC.CCEDOCTATB.CORRELATIVO%TYPE,
+    PNUMCTA            IN DBAFISICC.CCEDOCTATB.NUMCTA%TYPE,
+    PCODMOVTO          IN DBAFISICC.CCEDOCTATB.CODMOVTO%TYPE,
+    PMONTO             IN DBAFISICC.CCEDOCTATB.MONTO%TYPE,
+    PCURSO             IN DBAFISICC.CACURSOSTB.CURSO%TYPE,
+    POBSERVACIONES     IN DBAFISICC.CCEDOCTATB.OBSERVACIONES%TYPE,
+    POPERACION         IN DBAFISICC.CCEDOCTATB.OPERACION%TYPE,
+    PSQLCODE           OUT NUMBER,
+    PCENTRO            IN dbafisicc.ccedoctatb.centro%type default null,
+    PTIPOEDOCTA        IN NUMBER DEFAULT 1,
+    PPERIODO           IN DBAFISICC.CCEDOCTATB.PERIODO%TYPE default null
+    );
+-----------------------------------------encabezados-------------------------
+
+
+/*
+Nombre: SEL_PERIODOS
+Autor: Edy Cocon
+Fecha: 01/04/2014
+Descripcion: Devuelve los periodos de una carrera de acuerdo a los parametros 
+             PCARRERA.
+ - Modificacion - Edy Cocon - 04/11/2014 -
+ Modificacion: Se agrega el parametro POPCION.
+    POPCION = 0 => Devuelve todos los periodos de cacarciclostb
+    POPCION = 1 => Devuelve todos los periodos de cacurshoratb
+ Modificacion - Javier Garcia - 07/11/2014 -
+  Descripcion: Se agrega POPCION = 2 => Devuelve todos los periodos de
+                                        cainscritostb
+
+Autor: Kevin Herrera
+Fecha: 11/11/2015
+Descripcion: Se agrega opcion para periodos de cahinscritostb y cahinscritostb
+
+Modificacion: Morgan Arriaza 
+Fecha: 23/11/2016 
+Descripcion: Se agrega distinct a la opcion 0 y que pcarrera pueda ser null y
+se agrego parametros de pfechaini y pfechafin.
+
+Modificacion: Morgan Arriaza 
+Fecha: 26/11/2017
+Descripcion: Se agrega opcion 4 devuelve los periodos ya cerrados de 5 años 
+atras.
+Ticket: 3068
+
+Modificacion: Jair Flores
+Fecha: 26/04/2019
+Descripcion: Se agrega opcion 5 que devuelve todos los periodos de cacarciclos
+sin fecha impartido y el o los periodos sin fecha impartido en los que existan
+cuersos historicos 
+Ticket: 3470; solicitud: 1900001144
+
+Modificacion: Morgan Arriaza 
+Fecha: 06/06/2019
+Descripcion: Se agrega la popcion 6 que devuelve los periodos de caciclostb
+por carrera.
+
+Modificacion: Jair Flores
+Fecha: 03/07/2019
+Descripcion: Se cambia opcion 5 para que devuelva el periodo de la tabla 
+cahcurshoratb.
+Ticket: 3499; solicitud: 1900001204
+
+Modificacion: Manuel Santos
+Fecha: 03/09/2019
+Descripcion: Se agrega opcion 8 que devuelve todos los periodos segun la
+tabla de caciclostb incluyendo el actual.
+Solicitud: 1900001240
+
+Modificacion: Jair Flores
+Fecha: 08/11/2019
+Descripcion: Se cambia opcion 5 para que devuelva el periodo de la tabla 
+cahcursosimptb.
+Ticket: 3555; solicitud: 1900001274
+
+Modificacion: Jair Flores
+Fecha: 08/11/2019 
+Descripcion: Se validan los tipos de asignacion que poseen portal.
+Modificacion: Darwin Galicia - 21/02/2020, se agrega opcion para mostrar
+periodos de una carrera, Sol: 2000001030, tk: 3592
+Modificacion: 29/05/2023-Andres Calel-ACALEL se agrego opcion 10 para 
+obtener los periodos de CACARRERASTB
+*/
+PROCEDURE SEL_PERIODOS(
+  PCARRERA    DBAFISICC.cacarciclostb.carrera%TYPE default null,
+  PENTIDAD    dbafisicc.cacarrerasvw.entidad%type default null,
+  PDIRECTOR   dbafisicc.cacarrerasvw.encargado%type default null,
+  PGRADO      dbafisicc.cacarrerasvw.grado%type default null,
+  PCENTRO     dbafisicc.cacarrerasvw.centro%type default null,
+  PUSUARIO    DBAFISICC.GNUSUARIOSTB.USUARIO%TYPE, 
+  PFECHAINI   varchar2 DEFAULT NULL,
+  PFECHAFIN   varchar2 DEFAULT NULL,
+  POPCION     NUMBER DEFAULT 0,
+  PFECHAIMP   dbafisicc.CAHINSCRITOSTB.FECHAINSCRITO%type default null,
+  PPERIODO    dbafisicc.caciclostb.periodo%type default null,
+  RETVAL  OUT SYS_REFCURSOR
+)IS 
+vAñosPeriodos number;
+BEGIN
+
+vAñosPeriodos := 0;
+
+  IF POPCION = 0 THEN
+    OPEN RETVAL FOR
+      select  distinct A.periodo 
+        from DBAFISICC.cacarciclostb A
+            where (A.carrera = PCARRERA OR PCARRERA IS NULL)
+              AND EXISTS (SELECT 1
+                              FROM DBAFISICC.CAUSUARIOSCARRERASTB B
+                                  WHERE B.USUARIO = PUSUARIO
+                                    AND A.CARRERA = B.CARRERA)
+              AND (A.INICIO_ITC = PFECHAINI OR PFECHAINI IS NULL)
+              AND (A.FIN_ITC = PFECHAFIN OR PFECHAFIN IS NULL)
+      order by periodo desc;
+  ELSIF POPCION = 1 THEN
+    OPEN RETVAL FOR
+        SELECT distinct C.PERIODO
+                FROM DBAFISICC.cacurshoratb c, DBAFISICC.cacursosimptb d,
+                     DBAFISICC.camainhorariostb e    
+                        WHERE c.curso = d.curso(+)
+                          AND c.carrera = d.carrera(+)
+                          AND c.seccion = d.seccion(+)
+                          AND C.TIPOASIG = D.TIPOASIG(+)
+                          AND C.HORARIO=E.HORARIO
+                          AND C.CARRERA = PCARRERA
+                          AND E.STATUS = 'A'
+          ORDER BY C.PERIODO;
+  ELSIF POPCION = 2 THEN
+    OPEN RETVAL FOR
+      select distinct a.periodo
+        from dbafisicc.cainscritostb a, dbafisicc.cacarrerasvw b
+          where nvl(a.carrera_sede, a.carrera) = b.carrera
+           and (b.carrera = pcarrera or pcarrera is null)
+           and (b.entidad = pentidad or pentidad is null)
+           and (b.encargado = pdirector or pdirector is null)
+           and (b.grado = pgrado or pgrado is null)
+           and (b.centro = pcentro or pcentro is null)
+        order by a.periodo desc;
+  
+    ELSIF POPCION = 3 THEN
+    OPEN RETVAL FOR
+      select distinct a.periodo
+        from dbafisicc.cahinscritostb a, dbafisicc.cacarrerasvw b
+          where nvl(a.carrera_sede, a.carrera) = b.carrera
+           and (b.carrera = pcarrera or pcarrera is null)
+           and (b.entidad = pentidad or pentidad is null)
+           and (b.encargado = pdirector or pdirector is null)
+           and (b.grado = pgrado or pgrado is null)
+           and (b.centro = pcentro or pcentro is null)
+           and TO_CHAR(a.FECHAINSCRITO, 'MM/yyyy')
+                                        = TO_CHAR(PFECHAIMP, 'MM/yyyy')
+        order by a.periodo desc;
+        
+    ELSIF POPCION = 4 THEN 
+    
+    BEGIN 
+    
+    SELECT TIPOCICLO
+       INTO vAñosPeriodos
+        FROM DBAFISICC.CACARRERASTB 
+          WHERE CARRERA = PCARRERA;
+      EXCEPTION WHEN NO_DATA_FOUND THEN 
+        vAñosPeriodos := 0;
+
+     END;
+      
+      vAñosPeriodos := vAñosPeriodos * 5;
+      
+      OPEN RETVAL FOR
+     SELECT PERIODO
+        FROM (SELECT a.PERIODO, a.fechaimp
+                FROM DBAFISICC.CACARCICLOSTB a
+                  WHERE (a.CARRERA = PCARRERA OR PCARRERA IS NULL)
+                    and a.FECHAIMP is not null
+                    order by a.PERIODO desc)
+                        WHERE rownum <= vAñosPeriodos;
+                        
+      ELSIF POPCION = 5 THEN
+      OPEN RETVAL FOR
+               select DISTINCT A.periodo 
+                from  DBAFISICC.cahcursosimptb A
+                    where A.carrera = PCARRERA
+                      AND A.PERIODO IS NOT NULL
+                      AND EXISTS (SELECT 1
+                                      FROM DBAFISICC.CAUSUARIOSCARRERASTB B
+                                          WHERE B.USUARIO = PUSUARIO
+                                            AND A.CARRERA = PCARRERA)
+                     AND A.TIPOASIG IN ('AD','SU','ITC','AS','ER','CX','DT','VI')     
+      order by A.periodo desc;
+       ELSIF POPCION = 6 THEN 
+         OPEN RETVAL FOR
+            select periodo 
+                from dbafisicc.caciclostb 
+                where carrera = pcarrera
+                  and periodo = pperiodo;
+        ELSIF POPCION = 7 THEN 
+        OPEN RETVAL FOR
+        SELECT distinct C.PERIODO
+                FROM DBAFISICC.cacurshoratb c, DBAFISICC.cacursosimptb d,
+                     DBAFISICC.camainhorariostb e    
+                        WHERE c.curso = d.curso(+)
+                          AND c.carrera = d.carrera(+)
+                          AND c.seccion = d.seccion(+)
+                          AND C.TIPOASIG = D.TIPOASIG(+)
+                          AND C.HORARIO=E.HORARIO
+                          AND C.CARRERA = PCARRERA
+                          AND c.tipoasig = 'AS'
+                          AND E.STATUS = 'A'
+          ORDER BY C.PERIODO;
+        ELSIF POPCION = 8 THEN
+        OPEN RETVAL FOR
+            SELECT PERIODO
+                FROM DBAFISICC.CACICLOSTB
+            WHERE CARRERA = PCARRERA
+                ORDER BY PERIODO DESC;
+      ELSIF POPCION = 9 THEN
+      OPEN RETVAL FOR
+        select distinct a.periodo
+          FROM DBAFISICC.CACURSOSIMPTB A, DBAFISICC.CACARRERASVW B,
+               DBAFISICC.CAUSUARIOSCARRERASTB C
+          WHERE A.CARRERA  = B.CARRERA
+          and a.carrera  = c.carrera
+          and (C.USUARIO = PUSUARIO  or PUSUARIO is null)
+          and (b.STATUC = 'A')
+          AND (B.ENTIDAD IN (SELECT * FROM TABLE(SPLIT_VARCHAR(PENTIDAD,',')))   
+               OR PENTIDAD     IS NULL)
+          AND (B.ENCARGADO IN (SELECT * FROM TABLE 
+                                  (SPLIT_VARCHAR(PDIRECTOR,',')))  
+               OR PDIRECTOR    IS NULL)
+          AND (B.GRADO IN (SELECT * FROM TABLE (SPLIT_VARCHAR(PGRADO,',')))     
+               OR PGRADO       IS NULL)
+          AND (B.CARRERA IN (SELECT * FROM TABLE (SPLIT_VARCHAR(PCARRERA,','))) 
+              OR PCARRERA     IS NULL)
+          AND A.TIPOASIG = 'AS' 
+          AND (B.CENTRO = PCENTRO OR PCENTRO IS NULL)
+          AND A.PERIODO IS NOT NULL
+        UNION
+        select distinct a.periodo
+          FROM DBAFISICC.CAHCURSOSIMPTB A, DBAFISICC.CACARRERASVW B,
+               DBAFISICC.CAUSUARIOSCARRERASTB C
+          WHERE A.CARRERA  = B.CARRERA
+          and a.carrera  = c.carrera
+          and TO_NUMBER(TO_CHAR(a.fechaimp,'YYYY')) between 2000 and 
+              TO_NUMBER(TO_CHAR(sysdate,'YYYY'))
+          and (C.USUARIO = PUSUARIO  or PUSUARIO is null)
+          and (b.STATUC = 'A')
+          AND (B.ENTIDAD IN (SELECT * FROM TABLE(SPLIT_VARCHAR(PENTIDAD,',')))   
+               OR PENTIDAD     IS NULL)
+          AND (B.ENCARGADO IN (SELECT * FROM TABLE 
+                                  (SPLIT_VARCHAR(PDIRECTOR,',')))  
+               OR PDIRECTOR    IS NULL)
+          AND (B.GRADO IN (SELECT * FROM TABLE (SPLIT_VARCHAR(PGRADO,',')))     
+               OR PGRADO       IS NULL)
+          AND (B.CARRERA IN (SELECT * FROM TABLE (SPLIT_VARCHAR(PCARRERA,','))) 
+              OR PCARRERA     IS NULL)
+          AND A.TIPOASIG = 'AS' 
+          AND (B.CENTRO = PCENTRO OR PCENTRO IS NULL)
+          AND A.PERIODO IS NOT NULL
+          ORDER BY PERIODO DESC;
+          
+          ELSIF POPCION = 10 THEN
+          OPEN RETVAL FOR
+            SELECT PERIODO
+            FROM DBAFISICC.CACARRERASTB
+            WHERE CARRERA = PCARRERA
+            ORDER BY PERIODO DESC;
+      END IF;
+END SEL_PERIODOS;
+-------------------------------------------------------------------------
+
+/*
+Autor: Andres Calel -  ACALEL
+Fecha:29/05/2023
+Descripcion: Se obtiene el periodo maximo de una carrera
+*/
+PROCEDURE PERIODO_MAX(
+  PCARNET   DBAFISICC.CCHEDOCTADETALLETB.CARNET%TYPE,
+  PCARRERA  DBAFISICC.CCHEDOCTADETALLETB.CARRERA%TYPE DEFAULT NULL,
+  RETVAL    OUT SYS_REFCURSOR
+) IS
+BEGIN 
+  OPEN RETVAL FOR
+    SELECT MAX(Periodo)
+          FROM DBAFISICC.CCEDOCTATB
+              WHERE CARNET = PCARNET
+                   AND CARRERA = PCARRERA;
+-------------------------------
+    
+END PERIODO_MAX;
+
+PROCEDURE PERIODO_MAX(
+  PCARNET   DBAFISICC.CCHEDOCTADETALLETB.CARNET%TYPE,
+  PCARRERA  DBAFISICC.CCHEDOCTADETALLETB.CARRERA%TYPE DEFAULT NULL,
+  RETVAL    OUT SYS_REFCURSOR
+ );
+
+
+
