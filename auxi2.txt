@@ -1,0 +1,418 @@
+-----PKG_personal--------
+
+/*
+Nombre:       NOMBREPILA
+Autor:        Amilcar Martinez
+Fecha:        11/09/2015
+Descripcion:  Selecciona el nombre de personal segun codpers, enviando un 
+              parametro de formato:
+              0 - <NOMBREPILA>
+              1 - <GRADO_ACADEMICO> <NOMBREPILA>
+Utilizado en:
+     -Informatica\Controllers\DocentesController.cs 
+     -Informatica\Docentes\Asociaciones.aspx\Asociaciones.aspx.cs
+     -Informatica\Docentes\Capacitaciones.aspx\Capacitaciones.aspx.cs
+     -Informatica\Docentes\CargarFoto.aspx\CargarFoto.aspx.cs
+     -Informatica\Docentes\Certificaciones.aspx\Certificaciones.aspx.cs 
+     -Informatica\Docentes\Cursos.aspx\Cursos.aspx.cs
+     -Informatica\Docentes\ExpLaboral.aspx\ExpLaboral.aspx.cs
+     -Informatica\Docentes\Fotos.aspx\Fotos.aspx.cs 
+     -Informatica\Docentes\Medica.aspx\Medica.aspx.cs
+     -Informatica\Docentes\Publicaciones.aspx\Publicaciones.aspx.cs 
+     -Informatica\Docentes\Reconocimientos.aspx\Reconocimientos.aspx.cs
+     -Informatica\Models\PKG_PersonalModel.cs
+     -ORACLE/PKG_SOLTRAMITE
+Modificacion - Victor Arias - 20/12/2017
+  - Se modifica el parametro 1, ahora se traera el mayor grado 
+    academico de la tabla catiposnivtb segun los titulos 
+    verificados que el docente tenga en la tabla notitulostb. Ticket_3077
+ModificaciÃ³n: MARRIAZA 03/01/2018 
+             Si no encontramos datos en notitulostb traemos el prefijo de titulo
+             de nopersonaltb gradcad.
+Modificacion: MSANTOS - TICKET 3083 - 08/02/2018 - Se agrega otro formato para traer
+                        los datos del personal en base al campo nombreimp de cacarnetbitb.
+Modificacion: Morgan Arriaza - 13/02/2018 - Se agrega distinct al momento de buscar un prefijo.
+Miguel Barillas - 19/02/2018: Para el formato 1 si no se encuentra nombrepila
+se obtiene el nombre de impresion, por los casos de docentes que no poseen
+Darwin Galicia - 19/06/2018: Se agrega rownum = 1 en formato 0, para que devuelva una fila,
+cuando hay mas de un registro.
+Edy Cocon - 12/10/2018 - Se agrega bandera en notitulostb para cuando los doctorados
+tengan Ph.D. se les agregue el sufijo, ya que no corresponde para todos.
+Esto es unicamente para cuando PFORMATO = 1. 
+Xvelasquez 22/10/2019 - Se agrega opcion para contratos 
+                      ttps://betainformatica.galileo.edu/Contratos/Default.aspx  
+Marriaza - 10/02/2020 - Se agrega validacion cuando tiene o no tiene el punto en el gracad.
+Msantos - 06/05/2021 - Se agrega PFORMATO = 4 para los casos donde se requiera como
+principal en nombreimp con grado academico
+Marriaza - 02/09/2021 - Se agrega opcion 5 que unicamente devuelve el gracad correcto.
+Marriaza - 29/09/2021 - Se agrega opcion 6 que unicamente devuelve el gracad 
+con la descripcion del mismo. 0
+ACALEL   - 20/06/2023 - Se agrega opcion 7 para obtener Prefijo, NOMBRE1,NOMBRE2 y APELLIDO1.
+si el usurio no tiene un grado academico, se  asigna al  prefijo vacio('').
+Acalel- se modifico la opcion 4, en  EXCEPTION se deja como vacio el SELECT distinct trim('') PREFIJO
+para los usuarios que no tiene un grado academico. No se pone el prefijo gracad(sr,sra)
+*/
+FUNCTION NOMBREPILA
+(
+  PCODPERS DBAFISICC.NOPERSONALTB.CODPERS%TYPE DEFAULT NULL,
+  PFORMATO NUMBER
+) RETURN VARCHAR2
+AS
+  VNOMBRE VARCHAR2(125);
+  VPREFIJO VARCHAR2(20);
+  Vsufijo   dbafisicc.catiposnivtb.sufijo%type;
+  flag number default 0;
+  vPunto number default 0;
+  vDescNivel dbafisicc.catiposnivtb.nombre%type;
+BEGIN
+   
+   IF NVL(PFORMATO,0) = 0
+   THEN
+      SELECT DISTINCT NOMBREPILA INTO VNOMBRE
+        FROM dbafisicc.CACARNETBITB
+        WHERE codigo = PCODPERS
+          AND ROWNUM = 1;
+    
+    ELSIF  NVL(PFORMATO,0) = 1
+    THEN
+      BEGIN
+        select UPPER(PREFIJO), UPPER(sufijo) into VPREFIJO, vSufijo from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+          , decode(c.tiponivel, 'DOC', decode(nvl(d.aplicaPHD,0), 1, 'Ph.D.', ''), '') sufijo
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1
+        and prefijo is not null;
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+          BEGIN
+            
+          SELECT distinct trim(B.gracad) PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS;
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+                vSufijo := '';
+          END;
+      END;
+      SELECT NVL(NOMBREPILA, NOMBREIMP) INTO VNOMBRE --<--
+        FROM dbafisicc.CACARNETBITB
+        WHERE codigo = PCODPERS
+        and rownum = 1;
+        
+        if Vsufijo is not null then 
+            Vsufijo := ', ' || Vsufijo;
+        else 
+            vSufijo := '';
+        end if;
+ 
+  
+        VNOMBRE := VPREFIJO ||' '||VNOMBRE || Vsufijo;
+    ELSIF NVL(PFORMATO,0) = 2
+    THEN
+      BEGIN
+        select PREFIJO into VPREFIJO from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1;
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+          BEGIN
+          SELECT distinct trim(B.gracad) PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS;
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+          END;
+      END;
+      BEGIN
+        SELECT NOMBREIMP INTO VNOMBRE
+           FROM dbafisicc.CACARNETBITB
+           WHERE codigo = PCODPERS
+            and rownum = 1;
+      EXCEPTION WHEN NO_DATA_FOUND THEN 
+          SELECT NOMBRE1 ||' '|| APELLIDO1 AS NOMBRE INTO VNOMBRE
+           FROM dbafisicc.CACARNETBITB
+           WHERE codigo = PCODPERS
+            and rownum = 1;
+      END;
+      VNOMBRE := VPREFIJO ||' '||VNOMBRE ;
+      ELSIF  NVL(PFORMATO,0) = 3
+      THEN
+        BEGIN
+          select UPPER(PREFIJO), UPPER(sufijo) into VPREFIJO, vSufijo from(
+            SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+            , decode(c.tiponivel, 'DOC', decode(nvl(d.aplicaPHD,0), 1, 'Ph.D.', ''), '') sufijo
+              FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+              WHERE A.CODIGO = B.CODPERS
+              and b.codpers = d.codpers
+              and d.TIPONIVEL = c.TIPONIVEL
+              and d.VERIFICADO=1
+              AND B.codpers = PCODPERS
+              order by c.nivel desc)
+          where rownum = 1;
+          EXCEPTION WHEN NO_DATA_FOUND THEN 
+            VPREFIJO := '';
+            vSufijo := '';
+            flag :=1;
+        END;
+        if flag = 0 then
+          SELECT NVL(NOMBREPILA, NOMBREIMP) INTO VNOMBRE --<--
+          FROM dbafisicc.CACARNETBITB
+          WHERE codigo = PCODPERS
+          and rownum = 1;
+          
+          if Vsufijo is not null then 
+              Vsufijo := ', ' || Vsufijo;
+          else 
+              vSufijo := '';
+          end if;
+        
+        VNOMBRE := VNOMBRE || Vsufijo;
+        else 
+        vnombre :=' ';
+      end if;
+    ELSIF  NVL(PFORMATO,0) = 4
+    THEN
+      BEGIN
+        select UPPER(PREFIJO), UPPER(sufijo) into VPREFIJO, vSufijo from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+          , decode(c.tiponivel, 'DOC', decode(nvl(d.aplicaPHD,0), 1, 'Ph.D.', ''), '') sufijo
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1
+        and prefijo is not null;
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+          BEGIN
+            
+          SELECT distinct trim('') PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS;
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+                vSufijo := '';
+          END;
+      END;
+      SELECT NVL(NOMBREIMP, NOMBREPILA) INTO VNOMBRE --<--
+        FROM dbafisicc.CACARNETBITB
+        WHERE codigo = PCODPERS
+        and rownum = 1;
+        
+        if Vsufijo is not null then 
+            Vsufijo := ', ' || Vsufijo;
+        else 
+            vSufijo := '';
+        end if;
+ 
+  
+        VNOMBRE := VPREFIJO ||' '||VNOMBRE || Vsufijo;
+      ELSIF  NVL(PFORMATO,0) = 5
+    THEN
+      BEGIN
+        select UPPER(PREFIJO), UPPER(sufijo) into VPREFIJO, vSufijo from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+          , decode(c.tiponivel, 'DOC', decode(nvl(d.aplicaPHD,0), 1, 'Ph.D.', ''), '') sufijo
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1
+        and prefijo is not null;
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+          BEGIN
+            
+          SELECT distinct trim(B.gracad) PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS;
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+                vSufijo := '';
+          END;
+      END;
+      SELECT NVL(NOMBREPILA, NOMBREIMP) INTO VNOMBRE --<--
+        FROM dbafisicc.CACARNETBITB
+        WHERE codigo = PCODPERS
+        and rownum = 1;
+        
+        if Vsufijo is not null then 
+            Vsufijo := ', ' || Vsufijo;
+        else 
+            vSufijo := '';
+        end if;
+ 
+  
+        VNOMBRE := VPREFIJO;
+      ELSIF  NVL(PFORMATO,0) = 6
+    THEN
+      BEGIN
+
+     select UPPER(PREFIJO) into VPREFIJO  from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1
+        and prefijo is not null;    
+    
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+                BEGIN
+            
+          SELECT distinct trim(B.gracad) PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS
+                    AND UPPER(trim(B.gracad)) NOT IN ('SR.','SRITA.','SRA.');
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+                vSufijo := '';
+          END;
+                          
+      END;
+      
+             BEGIN 
+      
+              SELECT Nombre into vDescNivel 
+                FROM DBAFISICC.catiposnivtb
+                   WHERE (UPPER(FPREFIJO) = TRIM(VPREFIJO)
+                            or UPPER(MPREFIJO) = TRIM(VPREFIJO)
+                                or UPPER(SPREFIJO) = TRIM(VPREFIJO));
+                  EXCEPTION WHEN NO_DATA_FOUND THEN 
+                vDescNivel := '';
+                
+            
+             END; 
+        VNOMBRE := VPREFIJO || ' ' || vDescNivel;
+        
+        ELSIF NVL(PFORMATO,0) = 7
+    THEN
+      BEGIN
+        select PREFIJO into VPREFIJO from(
+          SELECT decode(trim(b.SEXO),'F',DECODE(trim(b.ESTADOCIVIL),'S',nvl(c.SPREFIJO,c.FPREFIJO),c.FPREFIJO),C.MPREFIJO) PREFIJO
+            FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B,dbafisicc.catiposnivtb c,dbafisicc.notitulostb d
+            WHERE A.CODIGO = B.CODPERS
+            and b.codpers = d.codpers
+            and d.TIPONIVEL = c.TIPONIVEL
+            and d.VERIFICADO=1
+            AND B.codpers = PCODPERS
+            order by c.nivel desc)
+        where rownum = 1;
+        EXCEPTION WHEN NO_DATA_FOUND THEN 
+          BEGIN
+          SELECT distinct trim('') PREFIJO
+              INTO VPREFIJO
+                FROM DBAFISICC.CACARNETBITB A, dbafisicc.nopersonaltb B
+                  WHERE A.CODIGO = B.CODPERS
+                    AND B.codpers = PCODPERS;
+            EXCEPTION WHEN NO_DATA_FOUND THEN 
+                VPREFIJO := '';
+          END;
+      END;
+      BEGIN
+        SELECT NOMBRE1 ||' '|| NOMBRE2 ||' '|| APELLIDO1 AS NOMBRE INTO VNOMBRE
+           FROM dbafisicc.CACARNETBITB
+           WHERE codigo = PCODPERS
+            and rownum = 1;
+      EXCEPTION WHEN NO_DATA_FOUND THEN 
+          SELECT NOMBRE1 ||' '|| NOMBRE2 ||' '|| APELLIDO1 AS NOMBRE INTO VNOMBRE
+           FROM dbafisicc.CACARNETBITB
+           WHERE codigo = PCODPERS
+            and rownum = 1;
+      END;
+      VNOMBRE := VPREFIJO ||' '||VNOMBRE ;
+    
+    ELSE
+         SELECT null 
+            into vnombre
+            FROM DUAL
+            WHERE ROWNUM = 0;
+    end IF;
+        
+    return VNOMBRE;
+EXCEPTION
+    WHEN OTHERS
+    THEN
+         return null;
+         
+         
+         
+END NOMBREPILA;
+
+
+
+-------------------------------PKG_USUARIOS-----------------------------------
+
+/*
+Autor:        Carlos Juan
+Fecha:        01/08/2013
+Descripcion:  Devuelve Toda la informacion del usuario
+Modificaciones:
+Autor: Miguel Barillas - 28/02/2014 - Se agrego la tabla sopersonalizartb al 
+select, para poder obtener desde el login los datos necesarios
+para cargar los estilos en seguimiento y solicitud de tramties.
+Miguel Barillas - 03/03/2018: Se agrega gmail de autenticacion al select
+Manuel Santos - 21/02/2020 - Se agrega funcion para obtener el nombre con
+gradcad correcto, y se agrega la obtencion del tema y flag para mostrar el
+intro de informatica al nuevo diseÃƒÆ’Ã‚Â±o.
+Manuel Santos - 06/05/2021 - Se cambia la opcion para obtener el nombre
+con grado academico
+Manuel Santos - 14/05/2021 - Se elimina tabla de personalizacion de tramites
+Manuel Santos - 22/07/2022 - Se agrega campo de accesos rapidos
+Manuel Santos - 01/08/2022 - revert temporal accesosrapidos
+Andres Calel  -20/06/2023 se agrega columna nombre_gradcad2 para obtener nombre1,nombre2 y apellido1
+*/
+PROCEDURE DATOSCOMPLETOS
+(  
+  PUSUARIO  DBAFISICC.GNUSUARIOSTB.USUARIO%TYPE,
+  RETVAL    OUT sys_refcursor
+) 
+AS
+  
+BEGIN
+   
+   OPEN RETVAL FOR
+   select gn.codpers,gn.nombre, gn.email, np.gracad,np.correlativo,
+           ca.gmail, dbafisicc.pkg_personal.nombrepila(gn.codpers, 4)
+           nombre_gradcad,ca.gmail, dbafisicc.pkg_personal.nombrepila(gn.codpers, 7)
+           nombre_gradcad2, nvl(up.tema,'theme-default') tema,
+           nvl(up.intro_informatica,0) intro_informatica, null accesosrapidos
+    from dbafisicc.gnusuariostb gn, dbafisicc.nopersonaltb np,
+         dbafisicc.cacarnetusuariotb ca, 
+         dbafisicc.gnusuariopersonalizartb up
+    where gn.codpers (+)= np.codpers
+    and  ca.correlativo (+) = np.correlativo
+    and  gn.usuario = up.usuario(+)
+    and  ca.tipo = 1
+    and gn.usuario=PUSUARIO;
+
+END DATOSCOMPLETOS;
+
